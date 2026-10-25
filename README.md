@@ -92,3 +92,12 @@
 - **4. 성벽을 따라** (7×6, 최단 7수, 되감기 2회): 저녁에 시작해 왼쪽 성벽을 따라 북쪽으로. 두 군데에서 한 걸음 물러나야 그림자가 돌아온다. 생성기 `seed=44&w=7&h=6&min=6&max=12&back=1&maxback=5&nbmin=3&nbmax=8&voids=1` 의 #5.
 - 가리는 탑은 18% 투명도에 실루엣 한 줄만 남긴다(층 선 생략). 앞·뒤 칸 표시는 탑을 모두 그린 뒤 맨 위에 그려 항상 보인다. 가림 판정 대상은 비숍과 왕관뿐.
 - 비숍은 바라보는 쪽으로 약 5° 기울고, 미트라에 그쪽으로 치우친 눈 두 점과 굵은 사선 홈이 있다.
+
+## 공개 주소와 배포 (GitHub Pages)
+
+- 저장소: https://github.com/BumjinGwak/trail-of-the-bishop
+- 플레이 주소: https://bumjingwak.github.io/trail-of-the-bishop/
+- `main` 에 푸시하면 `.github/workflows/pages.yml` 이 저장소 내용을 그대로 Pages 에 올린다. 보통 1분 안에 반영된다.
+- 재배포 절차: 파일 수정 → `git add -A && git commit -m "..." && git push`. 끝.
+- 커밋 작성자는 회사 메일이 아니라 `BumjinGwak@users.noreply.github.com` 으로 저장소에만 설정돼 있다.
+- 회사 Claude 계정의 아티팩트는 비공개로 두고 친구들에게는 위 Pages 주소만 공유한다.

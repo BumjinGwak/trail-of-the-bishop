@@ -1,5 +1,5 @@
 # main 에 푸시할 때마다 저장소 내용을 그대로 GitHub Pages 에 배포한다.
-# enablement: true 라서 첫 실행 때 Pages 를 자동으로 켠다 (Settings 에서 손댈 필요 없음).
+# Pages 는 Settings → Pages → Source 를 "GitHub Actions" 로 한 번 켜 두어야 한다 (기본 토큰으로는 자동으로 못 켠다).
 name: Deploy to GitHub Pages
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
         with:
-          enablement: true
+          enablement: false
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
