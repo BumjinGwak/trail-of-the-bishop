@@ -146,17 +146,19 @@
 
   // ---------- 인트로 타임라인 ----------
   /* 순서: 멀리서 줌인(흰 판 + 비숍) → 왕관 등장 → 탑이 위에서 툭툭 떨어짐 → 해가 켜지며 그림자 → 해가 한 바퀴 → 시작 */
+  /* 각 단계는 느긋하게(원래의 절반 속도), 단계 사이엔 GAP(1.5초)만큼 쉰다. 자막 없음 */
   function introView(now) {
     const e = now - intro.start;
     const n = level.buildings.length;
-    const ZOOM_D = 1500;
-    const T_CROWN = 900, CROWN_D = 450;
-    const T_TOW = 1500, TOW_D = 480, TOW_GAP = 110;
+    const GAP = 1500;
+    const ZOOM_D = 3000;
+    const T_CROWN = ZOOM_D + GAP, CROWN_D = 900;
+    const T_TOW = T_CROWN + CROWN_D + GAP, TOW_D = 960, TOW_GAP = 220;
     const towEnd = T_TOW + TOW_D + TOW_GAP * Math.max(0, n - 1);
-    const T_LIGHT = towEnd + 250, LIGHT_D = 550;
-    const T_ROT = T_LIGHT + LIGHT_D + 500, STEP = 680, MOVE = 320;
-    const T_END = T_ROT + STEP * 4 + 350;
-    const v = { zoom: 0.72 + 0.28 * easeOut(e / ZOOM_D), crown: clamp01((e - T_CROWN) / CROWN_D), drops: [], t0: state.t, t1: state.t, ease: 1, caption: null, done: e >= T_END };
+    const T_LIGHT = towEnd + GAP, LIGHT_D = 1100;
+    const T_ROT = T_LIGHT + LIGHT_D + GAP, MOVE = 640, STEP = MOVE + GAP;
+    const T_END = T_ROT + STEP * 4;
+    const v = { zoom: 0.72 + 0.28 * easeOut(e / ZOOM_D), crown: clamp01((e - T_CROWN) / CROWN_D), drops: [], t0: state.t, t1: state.t, ease: 1, done: e >= T_END };
     for (let i = 0; i < n; i++) {
       const k = (e - T_TOW - i * TOW_GAP) / TOW_D;
       v.drops.push(k <= 0 ? null : (1 - easeOut(k)) * 170);   // null = 아직 안 보임, 숫자 = 위로 떠 있는 픽셀
@@ -168,22 +170,17 @@
       if (i < 4) { v.t0 = state.t + i; v.t1 = state.t + i + 1; v.ease = easeOut(((e - T_ROT) - i * STEP) / MOVE); }
       else { v.t0 = v.t1 = state.t + 4; }
     }
-    if (e >= T_ROT) v.caption = '걸을 때마다 빛이 한 자리씩 돕니다';
-    else if (e >= T_LIGHT) v.caption = '탑이 그림자를 드리웁니다. 비숍은 검은 칸만 밟을 수 있어요';
-    else if (e >= T_TOW) v.caption = '탑이 세워집니다';
-    else if (e >= T_CROWN) v.caption = '왕관까지 가세요';
     return v;
   }
   function startIntro() {
-    intro = { start: performance.now(), lastCaption: null };
+    intro = { start: performance.now(), lastT: null };
     const at = +(new URLSearchParams(location.search).get('introAt') || 0);   // 디버그: ?introAt=2600 → 2.6초 지점부터
     if (at > 0) intro.start -= at;
   }
-  function endIntro() {
+  function endIntro() {   // 인트로 뒤에는 힌트 말풍선도 띄우지 않는다
     intro = null;
     ui.msg.hidden = true;
     applyTime(state.t);
-    if (level.hint) showMsg(level.hint, 4200);
     loop();
   }
 
@@ -588,7 +585,6 @@
     if (dying && now - dying.start >= DEATH_MS) { dying = null; restart(); return; }
     if (intro) {
       const iv = introView(now);
-      if (iv.caption !== intro.lastCaption) { intro.lastCaption = iv.caption; if (iv.caption) showMsg(iv.caption, 2600); }
       if (iv.t1 !== intro.lastT) { intro.lastT = iv.t1; applyTime(iv.t1); }
       if (iv.done) { endIntro(); return; }
     }
