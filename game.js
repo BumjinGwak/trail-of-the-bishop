@@ -15,7 +15,7 @@
   const LIGHT_R = 14;       // 해/달 원반 반지름
   const GHOST_ALPHA = 0.18; // 뭔가를 가리는 탑의 투명도
   const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const ANIM_MS = REDUCED ? 0 : 200, SHAKE_MS = 260, MSG_MS = 1600;
+  const ANIM_MS = REDUCED ? 0 : 200, SHAKE_MS = 260;
   const DEATH_MS = REDUCED ? 300 : 900;
 
   const COLORS = {
@@ -31,11 +31,6 @@
     sun: '#ffd98a', sunGlow: 'rgba(255,214,140,0.55)', moon: '#eef0ff', moonGlow: 'rgba(200,210,255,0.45)',
     ring: 'rgba(255,255,255,0.4)', label: 'rgba(255,255,255,0.75)',
   };
-  const MSG = {
-    death: '흰 칸을 밟았어요. 비숍이 쓰러집니다.',
-    building: '탑이에요.',
-    void: '그쪽엔 판이 없어요.',
-  };
   // 자리별 하늘색 (파스텔 그라데이션)
   const SKY = {
     morning: { top: '#f2c3a2', bottom: '#f9e7d4' },
@@ -47,14 +42,14 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('board'), ctx = canvas.getContext('2d');
   const ui = {
-    levelName: $('levelName'), time: $('timeLabel'), moves: $('moves'), msg: $('msg'),
+    levelName: $('levelName'), time: $('timeLabel'), moves: $('moves'),
     overlay: $('overlay'), overlayTitle: $('overlayTitle'), overlayText: $('overlayText'),
     sky: $('sky'), btnNext: $('btnNext'), btnAgain: $('btnAgain'),
     prevLevel: $('prevLevel'), nextLevel: $('nextLevel'),
   };
 
   let levelIndex = 0, level = null, state = null, history = [], moves = 0, won = false;
-  let anim = null, shake = null, raf = 0, msgTimer = 0;
+  let anim = null, shake = null, raf = 0;
   let dying = null, pendingDeath = false;   // 사망 효과 진행 중 / 흰 칸으로 걸어가는 중
   let intro = null;                          // 첫 시작 인트로 { start, lastCaption }
   let geo = null, stars = [], bIndex = null;
@@ -181,9 +176,8 @@
     const at = +(new URLSearchParams(location.search).get('introAt') || 0);   // 디버그: ?introAt=2600 → 2.6초 지점부터
     if (at > 0) intro.start -= at;
   }
-  function endIntro() {   // 인트로 뒤에는 힌트 말풍선도 띄우지 않는다
+  function endIntro() {
     intro = null;
-    ui.msg.hidden = true;
     applyTime(state.t);
     loop();
   }
@@ -602,7 +596,6 @@
     const fx = (d.dx - d.dy) * TW / 2, fy = (d.dx + d.dy) * TH / 2;
     const fl = Math.hypot(fx, fy) || 1;
     dying = { x: state.x, y: state.y, ux: fx / fl, uy: fy / fl, start: now };
-    showMsg(MSG.death);
   }
 
   // ---------- HUD ----------
@@ -619,12 +612,6 @@
     applyTime(state.t);
     ui.prevLevel.disabled = levelIndex === 0;
     ui.nextLevel.disabled = levelIndex >= LEVELS.length - 1;
-  }
-  function showMsg(text, ms) {
-    ui.msg.textContent = text;
-    ui.msg.hidden = false;
-    clearTimeout(msgTimer);
-    msgTimer = setTimeout(() => { ui.msg.hidden = true; }, ms || MSG_MS);
   }
   function bestKey() { return 'shade-walk-best-' + levelIndex; }
   function readBest() { try { const v = localStorage.getItem(bestKey()); return v ? +v : null; } catch (e) { return null; } }
@@ -652,11 +639,9 @@
     won = E.isGoal(level, state);
     anim = null; shake = null; dying = null; pendingDeath = false; intro = null;
     ui.overlay.hidden = true;
-    ui.msg.hidden = true;
     computeGeometry();
     updateHud();
     if (withIntro && !REDUCED) startIntro();
-    else if (level.hint) showMsg(level.hint, 4200);
     loop();
     if (won) showWin();
   }
@@ -664,9 +649,8 @@
     if (won || dying || pendingDeath) return;
     if (anim) anim = null;  // 진행 중인 이동은 즉시 완료
     const r = E.applyAction(level, state, a);
-    if (!r.ok) {
+    if (!r.ok) {   // 탑/구멍: 그 칸만 잠깐 붉게 깜빡인다
       shake = { x: r.target.x, y: r.target.y, start: performance.now() };
-      showMsg(MSG[r.problem]);
       loop();
       return;
     }
