@@ -1,0 +1,4 @@
+# 생성물: 아티팩트용 조각 HTML, 외부 호스팅용 배포 폴더/zip
+dist/
+deploy/
+deploy.zip

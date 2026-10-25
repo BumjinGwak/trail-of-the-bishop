@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>트레일 오브 더 비숍</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@300;400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <h1>트레일 오브 더 비숍</h1>
+    <p class="tagline">검은 비숍은 흰 칸을 밟지 못한다. 그림자로 만들어진 검은 칸을 밟아 왕관까지.</p>
+  </header>
+
+  <section class="hud" aria-label="상태">
+    <div class="hud-level">
+      <button id="prevLevel" type="button" aria-label="이전 스테이지">◀</button>
+      <span id="levelName">스테이지</span>
+      <button id="nextLevel" type="button" aria-label="다음 스테이지">▶</button>
+    </div>
+    <div class="hud-time" id="timeLabel" aria-label="시각">06:00</div>
+    <div class="hud-moves">걸음 <span id="moves">0</span></div>
+  </section>
+
+  <section class="sky" id="sky">
+    <canvas id="board" width="640" height="420" aria-label="게임 보드"></canvas>
+    <div class="msg" id="msg" hidden></div>
+    <div class="overlay" id="overlay" hidden>
+      <div class="card" role="dialog" aria-labelledby="overlayTitle">
+        <h2 id="overlayTitle">클리어!</h2>
+        <p id="overlayText"></p>
+        <div class="row">
+          <button class="btn" id="btnAgain" type="button">다시 하기</button>
+          <button class="btn primary" id="btnNext" type="button">다음 스테이지</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pad" aria-label="조작">
+    <button type="button" data-action="L"><span class="k">↶</span><span class="l">왼쪽으로 돌기</span></button>
+    <button type="button" class="fwd" data-action="F"><span class="k">↑</span><span class="l">앞으로 (시간 +1)</span></button>
+    <button type="button" data-action="R"><span class="k">↷</span><span class="l">오른쪽으로 돌기</span></button>
+    <button type="button" data-action="undo"><span class="k">⟲</span><span class="l">무르기</span></button>
+    <button type="button" class="back" data-action="B"><span class="k">↓</span><span class="l">뒤로 (시간 −1)</span></button>
+    <button type="button" data-action="restart"><span class="k">↺</span><span class="l">처음부터</span></button>
+  </section>
+
+  <section class="help">
+    <p class="hint" id="hint"></p>
+    <p class="legend">
+      <span><i class="swatch shade"></i>검은 칸(그림자): 비숍이 설 수 있는 곳</span>
+      <span><i class="swatch lit"></i>흰 칸(빛): 밟으면 쓰러짐</span>
+      <span><i class="swatch bld"></i>탑: 그림자를 드리움</span>
+    </p>
+    <p>빛은 아침(동쪽 해) → 정오(남쪽 해) → 저녁(서쪽 해) → 밤(북쪽 달) → 다시 아침 순서로 판 둘레를 돕니다. 탑의 그림자는 빛 반대쪽으로 탑 높이만큼 일직선으로 뻗습니다. 한 층이면 한 칸, 세 층이면 세 칸.</p>
+    <p>↑ 앞으로 한 칸 가면 빛이 다음 자리로, ↓ 뒤로 한 칸 물러나면 이전 자리로 돌아갑니다. ← → 는 제자리에서 몸만 돌립니다.</p>
+    <p>초록으로 빛나는 칸이 앞, 파랗게 빛나는 칸이 뒤입니다. 흰 칸도 밟을 수는 있지만 밟는 순간 비숍이 쓰러지고 처음부터 다시 시작합니다.</p>
+    <p>키보드: 방향키 또는 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <kbd>Z</kbd> 무르기 · <kbd>R</kbd> 처음부터</p>
+  </section>
+</main>
+<script src="engine.js"></script>
+<script src="levels.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
