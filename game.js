@@ -1,6 +1,6 @@
-/* game.js — 그늘길 화면/입력
+/* game.js — 트레일 오브 더 비숍 화면/입력
    아트 방향: 체스 × 모뉴먼트 밸리. 파스텔 하늘, 면 명암만으로 그린 건축(룩 성탑), 검은 비숍 주인공, 왕관 목표.
-   아이소메트릭 캔버스 렌더링, 키보드/터치 입력, 되돌리기, HUD, 사망/클리어 처리 */
+   아이소메트릭 캔버스 렌더링, 첫 시작 인트로 애니메이션, 키보드/터치 입력, 되돌리기, HUD, 사망/클리어 처리 */
 (function () {
   'use strict';
   const E = window.Engine;
@@ -8,7 +8,7 @@
 
   // --- 아이소메트릭 치수 (논리 픽셀) ---
   const TW = 76, TH = 38;   // 타일 마름모 폭/높이
-  const THICK = 16;         // 보드 두께 (떠 있는 섬처럼 두껍게)
+  const THICK = 16;         // 판 두께 (떠 있는 섬처럼 두껍게)
   const UNIT = 26;          // 탑 높이 1당 픽셀
   const PAD = 58;
   const LIGHT_Z = 1.6;      // 빛이 떠 있는 높이 (격자 단위)
@@ -24,7 +24,6 @@
     shade:    { top: '#34323f', left: '#1f1e27', right: '#292731', edge: 'rgba(0,0,0,0.25)' },
     base:     { top: '#5a4a52', left: '#3b2f36', right: '#4a3b42', edge: 'rgba(0,0,0,0)' },
     tower:    { top: '#e9b49c', faceLit: '#d99b83', faceDark: '#a46d5c', night: '#6c6796', edge: 'rgba(0,0,0,0)' },
-    shadowFill: 'rgba(38,30,70,0.34)',
     piece: '#17161e', pieceRim: 'rgba(245,238,225,0.5)', pieceShadow: 'rgba(20,16,40,0.32)',
     gold: '#e8c15a', goldDark: '#b58f2e',
     fwd: { fill: '#8fe0b5', line: '#52c48a' },
@@ -50,14 +49,18 @@
   const ui = {
     levelName: $('levelName'), time: $('timeLabel'), moves: $('moves'), msg: $('msg'),
     overlay: $('overlay'), overlayTitle: $('overlayTitle'), overlayText: $('overlayText'),
-    sky: $('sky'), hint: $('hint'), btnNext: $('btnNext'), btnAgain: $('btnAgain'),
+    sky: $('sky'), btnNext: $('btnNext'), btnAgain: $('btnAgain'),
     prevLevel: $('prevLevel'), nextLevel: $('nextLevel'),
   };
 
   let levelIndex = 0, level = null, state = null, history = [], moves = 0, won = false;
   let anim = null, shake = null, raf = 0, msgTimer = 0;
   let dying = null, pendingDeath = false;   // 사망 효과 진행 중 / 흰 칸으로 걸어가는 중
-  let geo = null, stars = [];
+  let intro = null;                          // 첫 시작 인트로 { start, lastCaption }
+  let geo = null, stars = [], bIndex = null;
+
+  const clamp01 = (k) => Math.max(0, Math.min(1, k));
+  const easeOut = (k) => 1 - Math.pow(1 - clamp01(k), 3);
 
   // ---------- 색 유틸 ----------
   function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
@@ -79,12 +82,13 @@
     return mixCols(lit, COLORS.shade, s);
   }
   // 빛 방향에 따른 탑 면 명암: 화면 왼쪽 면은 남쪽을, 오른쪽 면은 동쪽을 향한다
-  function towerColors(sun, night) {
+  function towerColors(sun, night, lightK) {
     const B = COLORS.tower;
     const top = mix(B.top, B.night, 0.5 * night), lit = mix(B.faceLit, B.night, 0.5 * night);
     const dark = mix(B.faceDark, B.night, 0.35 * night);
-    const kS = Math.max(0, sun.sy), kE = Math.max(0, sun.sx);
-    return { top, left: mix(dark, lit, kS), right: mix(dark, lit, kE), edge: B.edge };
+    const kS = Math.max(0, sun.sy) * lightK, kE = Math.max(0, sun.sx) * lightK;
+    const flat = mix(dark, lit, 0.5);   // 빛이 없을 때(인트로 초반)는 양면 중간 톤
+    return { top, left: mix(flat, mix(dark, lit, kS), lightK), right: mix(flat, mix(dark, lit, kE), lightK), edge: B.edge };
   }
 
   // ---------- 좌표 ----------
@@ -121,6 +125,9 @@
     let seed = 7;
     const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
     for (let i = 0; i < 40; i++) stars.push({ x: rnd() * w, y: rnd() * oy * 0.9, r: 0.6 + rnd() * 1.1, p: rnd() * Math.PI * 2 });
+    // 탑 번호표 (인트로 낙하 순서용)
+    bIndex = new Map();
+    level.buildings.forEach((b, i) => bIndex.set(b.y * level.W + b.x, i));
     const S = 1.2;   // 화면 확대 배율 (논리 좌표는 그대로)
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     canvas.width = Math.round(w * S * dpr);
@@ -135,6 +142,49 @@
       if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
     }
     return inside;
+  }
+
+  // ---------- 인트로 타임라인 ----------
+  /* 순서: 멀리서 줌인(흰 판 + 비숍) → 왕관 등장 → 탑이 위에서 툭툭 떨어짐 → 해가 켜지며 그림자 → 해가 한 바퀴 → 시작 */
+  function introView(now) {
+    const e = now - intro.start;
+    const n = level.buildings.length;
+    const ZOOM_D = 1500;
+    const T_CROWN = 900, CROWN_D = 450;
+    const T_TOW = 1500, TOW_D = 480, TOW_GAP = 110;
+    const towEnd = T_TOW + TOW_D + TOW_GAP * Math.max(0, n - 1);
+    const T_LIGHT = towEnd + 250, LIGHT_D = 550;
+    const T_ROT = T_LIGHT + LIGHT_D + 500, STEP = 680, MOVE = 320;
+    const T_END = T_ROT + STEP * 4 + 350;
+    const v = { zoom: 0.72 + 0.28 * easeOut(e / ZOOM_D), crown: clamp01((e - T_CROWN) / CROWN_D), drops: [], t0: state.t, t1: state.t, ease: 1, caption: null, done: e >= T_END };
+    for (let i = 0; i < n; i++) {
+      const k = (e - T_TOW - i * TOW_GAP) / TOW_D;
+      v.drops.push(k <= 0 ? null : (1 - easeOut(k)) * 170);   // null = 아직 안 보임, 숫자 = 위로 떠 있는 픽셀
+    }
+    v.light = clamp01((e - T_LIGHT) / LIGHT_D);
+    v.shadow = v.light;
+    if (e >= T_ROT) {
+      const i = Math.min(4, Math.floor((e - T_ROT) / STEP));
+      if (i < 4) { v.t0 = state.t + i; v.t1 = state.t + i + 1; v.ease = easeOut(((e - T_ROT) - i * STEP) / MOVE); }
+      else { v.t0 = v.t1 = state.t + 4; }
+    }
+    if (e >= T_ROT) v.caption = '걸을 때마다 빛이 한 자리씩 돕니다';
+    else if (e >= T_LIGHT) v.caption = '탑이 그림자를 드리웁니다. 비숍은 검은 칸만 밟을 수 있어요';
+    else if (e >= T_TOW) v.caption = '탑이 세워집니다';
+    else if (e >= T_CROWN) v.caption = '왕관까지 가세요';
+    return v;
+  }
+  function startIntro() {
+    intro = { start: performance.now(), lastCaption: null };
+    const at = +(new URLSearchParams(location.search).get('introAt') || 0);   // 디버그: ?introAt=2600 → 2.6초 지점부터
+    if (at > 0) intro.start -= at;
+  }
+  function endIntro() {
+    intro = null;
+    ui.msg.hidden = true;
+    applyTime(state.t);
+    if (level.hint) showMsg(level.hint, 4200);
+    loop();
   }
 
   // ---------- 기본 도형 ----------
@@ -245,7 +295,8 @@
     }
   }
   // 탑의 실제 그림자 다각형을 판 위에 깐다 (판 영역으로 클리핑)
-  function drawShadowPolys(sunFrom, sunTo, ease) {
+  function drawShadowPolys(sunFrom, sunTo, ease, shadowK) {
+    if (shadowK <= 0) return;
     ctx.save();
     ctx.beginPath();
     for (let gy = 0; gy < level.H; gy++) for (let gx = 0; gx < level.W; gx++) {
@@ -255,7 +306,7 @@
     }
     ctx.clip();
     const draw = (sun, alpha) => {
-      ctx.fillStyle = 'rgba(38,30,70,' + alpha.toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(38,30,70,' + (alpha * shadowK).toFixed(3) + ')';
       ctx.beginPath();
       for (const b of level.buildings) {
         const rect = E.shadowRect(b, sun);
@@ -270,13 +321,19 @@
   }
 
   // ---------- 판 위 요소 ----------
-  function drawGoal(o, now) {
+  function drawGoal(o, now, k) {
+    if (k <= 0) return;
     const cx = o.sx + TW / 2, cy = o.sy + TH / 2;
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate(cx, cy);
+    ctx.scale(0.6 + 0.4 * k, 0.6 + 0.4 * k);
+    ctx.translate(-cx, -cy);
     ctx.strokeStyle = COLORS.gold;
     ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.85 * k;
     ctx.beginPath(); ctx.ellipse(cx, cy, TW * 0.3, TH * 0.3, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = k;
     // 떠 있는 왕관
     const y = cy - 24 + (REDUCED ? 0 : Math.sin(now / 520) * 2);
     ctx.fillStyle = COLORS.pieceShadow;
@@ -287,6 +344,7 @@
     ctx.lineTo(cx + 5, y + 1); ctx.lineTo(cx + 10, y - 4); ctx.lineTo(cx + 10, y + 6); ctx.closePath(); ctx.fill();
     ctx.fillStyle = COLORS.goldDark;
     ctx.fillRect(cx - 10, y + 4, 20, 2.5);
+    ctx.restore();
   }
   // 앞 칸은 초록, 뒤 칸은 파랑으로 판이 은은하게 깜빡인다 (갈 수 있는지와 무관)
   function drawFlash(gx, gy, o, now) {
@@ -307,7 +365,7 @@
     ctx.globalAlpha = 1;
   }
   // 룩 성탑: 각기둥 + 윗면 네 모서리의 총안
-  function drawTower(gx, gy, tile, o, col) {
+  function drawTower(tile, o, col) {
     const lift = tile.h * UNIT;
     drawPrism(o.sx, o.sy, lift, lift, col);
     // 층 선: 높이 1마다 한 칸처럼 (아주 연하게)
@@ -321,20 +379,26 @@
     const s = 0.28, mh = 7, tw = TW * s, th = TH * s;
     const corners = [[0, 0], [1 - s, 0], [0, 1 - s], [1 - s, 1 - s]];
     for (const c of corners) {
-      // 타일 안의 작은 정사각형 (c[0], c[1]) ~ (+s) 의 화면 바운딩 박스 원점
       const sx = o.sx + TW / 2 - tw / 2 + (c[0] - c[1]) * TW / 2, sy = o.sy + (c[0] + c[1]) * TH / 2;
       drawPrism(sx, sy, lift + mh, mh, col, tw, th);
     }
   }
-  function drawBuilding(gx, gy, tile, o, sun, night, keyPts) {
+  function drawBuilding(gx, gy, tile, o, col, keyPts, drop) {
     const lift = tile.h * UNIT;
+    if (drop) {   // 인트로: 위에서 떨어지는 중. 가림 판정 없이 들어 올려 그린다
+      ctx.save();
+      ctx.translate(0, -drop);
+      drawTower(tile, o, col);
+      ctx.restore();
+      return;
+    }
     const poly = silhouette(o.sx, o.sy, lift);
     let ghost = false;
     for (const p of keyPts) {
       if (gx + gy > p.sum && pointInPoly(p.x, p.y, poly)) { ghost = true; break; }
     }
     if (ghost) ctx.globalAlpha = GHOST_ALPHA;
-    drawTower(gx, gy, tile, o, towerColors(sun, night));
+    drawTower(tile, o, col);
     ctx.globalAlpha = 1;
     if (ghost) {   // 실루엣 한 줄만 남긴다. 층 선은 뒤를 가리므로 생략
       ctx.strokeStyle = 'rgba(255,245,235,0.5)';
@@ -433,45 +497,63 @@
   }
 
   function render(now) {
-    let ease = 1, from = state;
+    let ease = 1, from = state, t0 = state.t, t1 = state.t;
     if (anim) {
       const k = Math.max(0, Math.min(1, (now - anim.start) / anim.dur));
       ease = 1 - Math.pow(1 - k, 3);
       from = anim.from;
+      t0 = from.t;
     }
-    const smFrom = E.shadowMap(level, from.t), smTo = E.shadowMap(level, state.t);
-    const sunFrom = E.sunAt(level, from.t), sunTo = E.sunAt(level, state.t);
-    const night = (sunFrom.moon ? 1 : 0) * (1 - ease) + (sunTo.moon ? 1 : 0) * ease;
+    const iv = intro ? introView(now) : null;
+    if (iv) { t0 = iv.t0; t1 = iv.t1; ease = iv.ease; }
+    const lightK = iv ? iv.light : 1, shadowK = iv ? iv.shadow : 1, crownK = iv ? iv.crown : 1;
+    const smFrom = E.shadowMap(level, t0), smTo = E.shadowMap(level, t1);
+    const sunFrom = E.sunAt(level, t0), sunTo = E.sunAt(level, t1);
+    const night = ((sunFrom.moon ? 1 : 0) * (1 - ease) + (sunTo.moon ? 1 : 0) * ease) * lightK;
     const px = from.x + (state.x - from.x) * ease, py = from.y + (state.y - from.y) * ease;
     const playerCell = (from.x + from.y > state.x + state.y) ? from : state;
-    const showIndicators = !anim && !won && !dying && !pendingDeath;
+    const showIndicators = !anim && !won && !dying && !pendingDeath && !intro;
     const s = sunTo.sx + sunTo.sy;
     const lightInFront = s > 0 || (s === 0 && sunTo.sy > 0);
+    const towerCol = towerColors(sunTo, night, lightK);
 
     ctx.clearRect(0, 0, geo.w, geo.h);
+    ctx.save();
+    if (iv && iv.zoom < 1) {   // 인트로 줌인: 판 중심을 기준으로 확대
+      const c = proj(level.W / 2, level.H / 2, 0);
+      ctx.translate(c.x, c.y);
+      ctx.scale(iv.zoom, iv.zoom);
+      ctx.translate(-c.x, -c.y);
+    }
     // 1. 하늘: 별, 빛 궤도, 뒤편 빛
     drawStars(now, night);
-    drawLightRing();
-    if (!lightInFront) drawLightDisc(sunFrom, sunTo, ease);
+    if (lightK > 0) {
+      ctx.globalAlpha = lightK;
+      drawLightRing();
+      if (!lightInFront) drawLightDisc(sunFrom, sunTo, ease);
+      ctx.globalAlpha = 1;
+    }
     // 2. 판 (바닥 타일 + 탑 밑판)
     forEachCell((gx, gy, tile, o) => {
       if (tile.type === 'floor') {
-        const sh = (smFrom[gy][gx] ? 1 : 0) * (1 - ease) + (smTo[gy][gx] ? 1 : 0) * ease;
+        const sh = ((smFrom[gy][gx] ? 1 : 0) * (1 - ease) + (smTo[gy][gx] ? 1 : 0) * ease) * shadowK;
         drawPrism(o.sx, o.sy, 0, THICK, floorColors(sh, night));
       } else if (tile.type === 'building') {
-        drawPrism(o.sx, o.sy, 0, THICK, COLORS.base);
+        const drop = iv ? iv.drops[bIndex.get(gy * level.W + gx)] : 0;
+        drawPrism(o.sx, o.sy, 0, THICK, drop === null ? floorColors(0, night) : COLORS.base);
       }
     });
     // 3. 실제 그림자 다각형
-    drawShadowPolys(sunFrom, sunTo, ease);
+    drawShadowPolys(sunFrom, sunTo, ease, shadowK);
     // 4. 판 위 요소와 탑, 비숍 (화가 순서)
     const keyPts = importantPoints(px, py, playerCell);
     forEachCell((gx, gy, tile, o) => {
       if (tile.type === 'floor') {
         flashIfShaking(gx, gy, o, 0, now);
-        if (gx === level.goal.x && gy === level.goal.y) drawGoal(o, now);
+        if (gx === level.goal.x && gy === level.goal.y) drawGoal(o, now, crownK);
       } else if (tile.type === 'building') {
-        drawBuilding(gx, gy, tile, o, sunTo, night, keyPts);
+        const drop = iv ? iv.drops[bIndex.get(gy * level.W + gx)] : 0;
+        if (drop !== null) drawBuilding(gx, gy, tile, o, towerCol, keyPts, drop);
         flashIfShaking(gx, gy, o, tile.h * UNIT, now);
       }
       if (!dying && gx === playerCell.x && gy === playerCell.y) drawPlayer(px, py);
@@ -485,9 +567,14 @@
       }
     }
     // 6. 앞쪽(동/남) 빛은 판 위에 그린다. 정거장 이름표는 항상 맨 위
-    if (lightInFront) drawLightDisc(sunFrom, sunTo, ease);
-    drawLightStops(sunTo);
+    if (lightK > 0) {
+      ctx.globalAlpha = lightK;
+      if (lightInFront) drawLightDisc(sunFrom, sunTo, ease);
+      drawLightStops(sunTo);
+      ctx.globalAlpha = 1;
+    }
     if (dying) drawDeath(now);
+    ctx.restore();
   }
 
   function loop() { if (!raf) raf = requestAnimationFrame(frame); }
@@ -499,9 +586,15 @@
     }
     if (shake && now - shake.start >= SHAKE_MS) shake = null;
     if (dying && now - dying.start >= DEATH_MS) { dying = null; restart(); return; }
+    if (intro) {
+      const iv = introView(now);
+      if (iv.caption !== intro.lastCaption) { intro.lastCaption = iv.caption; if (iv.caption) showMsg(iv.caption, 2600); }
+      if (iv.t1 !== intro.lastT) { intro.lastT = iv.t1; applyTime(iv.t1); }
+      if (iv.done) { endIntro(); return; }
+    }
     render(now);
     const pulsing = !REDUCED && !won && !dying;   // 앞뒤 칸 깜빡임, 왕관 떠 있기, 별 반짝임
-    if (anim || shake || dying || pulsing) loop();
+    if (anim || shake || dying || intro || pulsing) loop();
   }
   function startDeath(now) {
     const d = E.DIRS[state.facing];
@@ -512,21 +605,25 @@
   }
 
   // ---------- HUD ----------
-  function updateHud() {
-    const sun = E.sunAt(level, state.t);
-    ui.levelName.textContent = level.name;
+  // 시각 t 의 자리 이름과 하늘색을 HUD 에 반영 (게임 중엔 state.t, 인트로 회전 중엔 인트로의 t)
+  function applyTime(t) {
+    const sun = E.sunAt(level, t);
     ui.time.textContent = sun.name;
-    ui.moves.textContent = String(moves);
     const sky = SKY[sun.key] || SKY.noon;
     ui.sky.style.background = 'linear-gradient(180deg, ' + sky.top + ' 0%, ' + sky.bottom + ' 100%)';
+  }
+  function updateHud() {
+    ui.levelName.textContent = level.name;
+    ui.moves.textContent = String(moves);
+    applyTime(state.t);
     ui.prevLevel.disabled = levelIndex === 0;
     ui.nextLevel.disabled = levelIndex >= LEVELS.length - 1;
   }
-  function showMsg(text) {
+  function showMsg(text, ms) {
     ui.msg.textContent = text;
     ui.msg.hidden = false;
     clearTimeout(msgTimer);
-    msgTimer = setTimeout(() => { ui.msg.hidden = true; }, MSG_MS);
+    msgTimer = setTimeout(() => { ui.msg.hidden = true; }, ms || MSG_MS);
   }
   function bestKey() { return 'shade-walk-best-' + levelIndex; }
   function readBest() { try { const v = localStorage.getItem(bestKey()); return v ? +v : null; } catch (e) { return null; } }
@@ -546,18 +643,19 @@
   }
 
   // ---------- 상태 전이 ----------
-  function loadLevel(i, keep) {
+  function loadLevel(i, keep, withIntro) {
     levelIndex = Math.max(0, Math.min(LEVELS.length - 1, i));
     level = E.parseLevel(LEVELS[levelIndex]);
     if (keep && keep.state) { state = keep.state; history = keep.history || []; moves = keep.moves || 0; }
     else { state = Object.assign({}, level.start); history = []; moves = 0; }
     won = E.isGoal(level, state);
-    anim = null; shake = null; dying = null; pendingDeath = false;
+    anim = null; shake = null; dying = null; pendingDeath = false; intro = null;
     ui.overlay.hidden = true;
     ui.msg.hidden = true;
-    ui.hint.textContent = level.hint;
     computeGeometry();
     updateHud();
+    if (withIntro && !REDUCED) startIntro();
+    else if (level.hint) showMsg(level.hint, 4200);
     loop();
     if (won) showWin();
   }
@@ -607,6 +705,7 @@
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     const tag = ev.target && ev.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (intro) { ev.preventDefault(); endIntro(); return; }   // 아무 키나 누르면 인트로 건너뛰기
     if (KEYS[ev.key]) { ev.preventDefault(); doAction(KEYS[ev.key]); return; }
     if (ev.key === 'z' || ev.key === 'Z' || ev.key === 'Backspace') { ev.preventDefault(); undo(); return; }
     if (ev.key === 'r' || ev.key === 'R') { ev.preventDefault(); restart(); return; }
@@ -614,12 +713,14 @@
   });
   document.querySelectorAll('[data-action]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (intro) { endIntro(); return; }
       const a = btn.getAttribute('data-action');
       if (a === 'undo') undo();
       else if (a === 'restart') restart();
       else doAction(a);
     });
   });
+  canvas.addEventListener('pointerdown', () => { if (intro) endIntro(); });
   ui.btnAgain.addEventListener('click', restart);
   ui.btnNext.addEventListener('click', () => loadLevel(levelIndex + 1));
   ui.prevLevel.addEventListener('click', () => loadLevel(levelIndex - 1));
@@ -629,10 +730,10 @@
   // ---------- 시작 (아티팩트 핫 리로드 시 상태 유지) ----------
   function start(data) {
     data = data || {};
-    const m = /^#l(\d+)$/.exec(location.hash || '');   // #l3 → 3번째 스테이지로 시작
+    const m = /^#l(\d+)$/.exec(location.hash || '');   // #l3 → 3번째 스테이지로 시작 (인트로 없음)
     if (typeof data.levelIndex === 'number' && data.state) loadLevel(data.levelIndex, data);
     else if (m) loadLevel(+m[1] - 1);
-    else loadLevel(0);
+    else loadLevel(0, null, true);
   }
   const hot = window.claude && window.claude.hot;
   if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ levelIndex, state, history, moves }));

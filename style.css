@@ -129,19 +129,12 @@ button.btn.primary { background: var(--fg); color: var(--bg); border-color: tran
 
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.help { color: var(--muted); font-size: 14px; display: grid; gap: 8px; }
-.help p { margin: 0; }
-.help .hint { color: var(--fg); border-left: 2px solid var(--accent); padding: 2px 0 2px 12px; }
-.help kbd {
-  font-family: var(--font-body); font-size: 12px;
+.keys { margin: 0; text-align: center; color: var(--muted); font-size: 12px; letter-spacing: 0.02em; }
+.keys kbd {
+  font-family: var(--font-body); font-size: 11px;
   border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
   padding: 0 5px; background: var(--panel); color: var(--fg);
 }
-.help .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; }
-.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1px solid rgba(0,0,0,0.15); }
-.swatch.lit { background: #efe6d6; }
-.swatch.shade { background: #34323f; }
-.swatch.bld { background: #e9b49c; }
 
 @media (prefers-reduced-motion: reduce) {
   .pad button:active { transform: none; }
