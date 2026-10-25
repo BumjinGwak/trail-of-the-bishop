@@ -150,15 +150,15 @@
   function introView(now) {
     const e = now - intro.start;
     const n = level.buildings.length;
-    const GAP = 1500;
+    const GAP = 1000;
     const ZOOM_D = 3000;
     const T_CROWN = ZOOM_D + GAP, CROWN_D = 900;
     const T_TOW = T_CROWN + CROWN_D + GAP, TOW_D = 960, TOW_GAP = 220;
     const towEnd = T_TOW + TOW_D + TOW_GAP * Math.max(0, n - 1);
     const T_LIGHT = towEnd + GAP, LIGHT_D = 1100;
-    const T_ROT = T_LIGHT + LIGHT_D + GAP, MOVE = 640, STEP = MOVE + GAP;
+    const T_ROT = T_LIGHT + LIGHT_D + GAP, MOVE = 420, STEP = MOVE + GAP;
     const T_END = T_ROT + STEP * 4;
-    const v = { zoom: 0.72 + 0.28 * easeOut(e / ZOOM_D), crown: clamp01((e - T_CROWN) / CROWN_D), drops: [], t0: state.t, t1: state.t, ease: 1, done: e >= T_END };
+    const v = { zoom: 0.72 + 0.28 * easeOut(e / ZOOM_D), crown: clamp01((e - T_CROWN) / CROWN_D), drops: [], t0: state.t, t1: state.t, ease: 1, sunEase: 1, done: e >= T_END };
     for (let i = 0; i < n; i++) {
       const k = (e - T_TOW - i * TOW_GAP) / TOW_D;
       v.drops.push(k <= 0 ? null : (1 - easeOut(k)) * 170);   // null = 아직 안 보임, 숫자 = 위로 떠 있는 픽셀
@@ -167,8 +167,12 @@
     v.shadow = v.light;
     if (e >= T_ROT) {
       const i = Math.min(4, Math.floor((e - T_ROT) / STEP));
-      if (i < 4) { v.t0 = state.t + i; v.t1 = state.t + i + 1; v.ease = easeOut(((e - T_ROT) - i * STEP) / MOVE); }
-      else { v.t0 = v.t1 = state.t + 4; }
+      if (i < 4) {
+        const kk = clamp01(((e - T_ROT) - i * STEP) / MOVE);
+        v.t0 = state.t + i; v.t1 = state.t + i + 1;
+        v.sunEase = easeOut(kk);                 // 해는 부드럽게 이동
+        v.ease = easeOut(clamp01(kk / 0.5));     // 그림자는 이동 전반부에 재빨리 바뀐다 (해보다 늦지 않게)
+      } else { v.t0 = v.t1 = state.t + 4; }
     }
     return v;
   }
@@ -503,6 +507,7 @@
     }
     const iv = intro ? introView(now) : null;
     if (iv) { t0 = iv.t0; t1 = iv.t1; ease = iv.ease; }
+    const sunEase = iv ? iv.sunEase : ease;
     const lightK = iv ? iv.light : 1, shadowK = iv ? iv.shadow : 1, crownK = iv ? iv.crown : 1;
     const smFrom = E.shadowMap(level, t0), smTo = E.shadowMap(level, t1);
     const sunFrom = E.sunAt(level, t0), sunTo = E.sunAt(level, t1);
@@ -527,7 +532,7 @@
     if (lightK > 0) {
       ctx.globalAlpha = lightK;
       drawLightRing();
-      if (!lightInFront) drawLightDisc(sunFrom, sunTo, ease);
+      if (!lightInFront) drawLightDisc(sunFrom, sunTo, sunEase);
       ctx.globalAlpha = 1;
     }
     // 2. 판 (바닥 타일 + 탑 밑판)
@@ -566,7 +571,7 @@
     // 6. 앞쪽(동/남) 빛은 판 위에 그린다. 정거장 이름표는 항상 맨 위
     if (lightK > 0) {
       ctx.globalAlpha = lightK;
-      if (lightInFront) drawLightDisc(sunFrom, sunTo, ease);
+      if (lightInFront) drawLightDisc(sunFrom, sunTo, sunEase);
       drawLightStops(sunTo);
       ctx.globalAlpha = 1;
     }
